@@ -1,3 +1,7 @@
+# v1.24
+- Ensure we don't send mail to deactivated user
+- Send mail to process responsible when based on rules
+
 # v1.23.1 (2025-02-23)
 - Improve kanban view
   - fix legend
