@@ -270,6 +270,7 @@ def process(request, process_id, slug_info=None):
             goal = last_itw.goal
 
     documents = process.candidate.document_set.all()
+
     context = {
         "process": process,
         "documents": documents,
@@ -502,7 +503,6 @@ def new_candidate_POST_handler(
     duplicates = None
 
     candidate = candidate_form.save(commit=False)
-
     # check for duplicates unless it has already been processed (re-used or ignored)
     if not ("new-candidate" in request.POST) and not past_candidate_id:
         duplicates = candidate.find_duplicates()
@@ -516,9 +516,11 @@ def new_candidate_POST_handler(
         candidate.save()
         log_action(True, candidate, request.user, new_candidate)
 
-        content = request.FILES.get("cv", None)
-        if content:
-            Document.objects.create(document_type="CV", content=content, candidate=candidate)
+        content = request.FILES.getlist("candidate_documents", [])
+        doctypes = request.POST.getlist("doctypes", [])
+
+        for (file, doctype) in zip(content, doctypes):
+            Document.objects.create(document_type=doctype, content=file, candidate=candidate)
 
         process = process_form.save(commit=False)
         process.candidate = candidate
@@ -592,6 +594,8 @@ def new_candidate(request, past_candidate_id=None):
 
     source_form = SourceForm(prefix="source")
     offer_form = OfferForm(prefix="offer")
+
+    doctypes = dict(Document.DOCUMENT_TYPE)
     return render(
         request,
         "interview/new_candidate.html",
@@ -604,6 +608,7 @@ def new_candidate(request, past_candidate_id=None):
             "duplicates": duplicate_processes,
             "candidate": candidate,
             "subsidiaries": Subsidiary.objects.all(),
+            "document_types": doctypes,
         },
     )
 
@@ -899,9 +904,15 @@ def edit_candidate(request, process_id):
             candidate_form.id = candidate.id
             candidate = candidate_form.save()
             log_action(False, candidate, request.user, edit_candidate)
-            content = request.FILES.get("cv", None)
-            if content:
-                Document.objects.create(document_type="CV", content=content, candidate=candidate)
+
+            content = request.FILES.getlist("candidate_documents", [])
+            doctypes = request.POST.getlist("doctypes", [])
+            for (doc, doctype) in zip(content, doctypes):
+                Document.objects.create(document_type=doctype, content=doc, candidate=candidate)
+            ids_documents_to_delete = request.POST.getlist("documents_to_delete", [])
+            related_documents = Document.objects.filter(candidate=candidate)  # security
+            for doc_id in ids_documents_to_delete:
+                related_documents.get(id=int(doc_id)).delete()
             process_form.id = process.id
             process = process_form.save(commit=False)
             process.save()
@@ -917,6 +928,8 @@ def edit_candidate(request, process_id):
     if request.user.is_external:
         process_form.fields.pop("sources")
 
+    doctypes = dict(Document.DOCUMENT_TYPE)
+
     data = {
         "process": process,
         "candidate_form": candidate_form,
@@ -924,6 +937,8 @@ def edit_candidate(request, process_id):
         "source_form": source_form,
         "offer_form": offer_form,
         "subsidiaries": Subsidiary.objects.all(),
+        "documents": Document.objects.filter(candidate=candidate),
+        "document_types": doctypes,
     }
     return render(request, "interview/new_candidate.html", data)
 
